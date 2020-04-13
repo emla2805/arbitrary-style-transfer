@@ -24,33 +24,13 @@ if __name__ == "__main__":
     parser.add_argument("--log-freq", default=500, type=int)
     args = parser.parse_args()
 
+    content_paths = ["avril_cropped.jpg", "chicago_cropped.jpg"]
+    style_paths = ["impronte_d_artista_cropped.jpg", "ashville_cropped.jpg"]
     test_content_images = tf.concat(
-        [
-            load_img(f"images/content/{f}")
-            for f in [
-                "avril_cropped.jpg",
-                "chicago_cropped.jpg",
-                "modern_cropped.jpg",
-                "cornell_cropped.jpg",
-                "sailboat_cropped.jpg",
-                "lenna_cropped.jpg",
-            ]
-        ],
-        axis=0,
+        [load_img(f"images/content/{f}") for f in content_paths], axis=0
     )
     test_style_images = tf.concat(
-        [
-            load_img(f"images/style/{f}")
-            for f in [
-                "impronte_d_artista_cropped.jpg",
-                "ashville_cropped.jpg",
-                "goeritz_cropped.jpg",
-                "woman_with_hat_matisse_cropped.jpg",
-                "sketch_cropped.png",
-                "en_campo_gris_cropped.jpg",
-            ]
-        ],
-        axis=0,
+        [load_img(f"images/style/{f}") for f in style_paths], axis=0
     )
 
     content_layers = ["block4_conv1"]  # relu-4-1
