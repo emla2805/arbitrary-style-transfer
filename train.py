@@ -57,12 +57,7 @@ if __name__ == "__main__":
 
     def process_style(file_path):
         img = tf.io.read_file(file_path)
-        img = tf.image.decode_jpeg(
-            img,
-            channels=3,
-            try_recover_truncated=True,
-            acceptable_fraction=0.9,
-        )
+        img = tf.image.decode_jpeg(img, channels=3)
         img = tf.image.resize(img, size=(512, 512), preserve_aspect_ratio=True)
         img = tf.image.random_crop(
             img, size=(args.image_size, args.image_size, 3)
@@ -82,6 +77,7 @@ if __name__ == "__main__":
     ds_pbn = (
         tf.data.Dataset.list_files(os.path.join(args.style_dir, "*.jpg"))
         .map(process_style, num_parallel_calls=AUTOTUNE)
+        # Ignore too large or corrupt image files
         .apply(tf.data.experimental.ignore_errors())
         .repeat()
         .batch(args.batch_size)
