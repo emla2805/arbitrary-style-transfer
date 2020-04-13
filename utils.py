@@ -1,17 +1,5 @@
 import tensorflow as tf
 
-AUTOTUNE = tf.data.experimental.AUTOTUNE
-PBN_PATH = "https://github.com/zo7/painter-by-numbers/releases/download/data-v1.0/{split}.tgz"
-
-
-def load_pbn(split="train"):
-    data_dir = tf.keras.utils.get_file(
-        origin=PBN_PATH.format(split=split), fname=split, untar=True
-    )
-    ds_list = tf.data.Dataset.list_files(f"{data_dir}/*.jpg")
-    ds = ds_list.map(process_path, num_parallel_calls=AUTOTUNE)
-    return ds
-
 
 def process_path(file_path):
     img = tf.io.read_file(file_path)

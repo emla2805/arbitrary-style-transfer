@@ -1,10 +1,11 @@
+import os
 from argparse import ArgumentParser
 
 import tensorflow as tf
 import tensorflow_datasets as tfds
 
 from networks import TransformerNet
-from utils import load_img, style_loss, content_loss, load_pbn
+from utils import load_img, style_loss, content_loss
 
 AUTOTUNE = tf.data.experimental.AUTOTUNE
 
@@ -12,6 +13,7 @@ AUTOTUNE = tf.data.experimental.AUTOTUNE
 if __name__ == "__main__":
     parser = ArgumentParser()
     parser.add_argument("--log-dir", default="model")
+    parser.add_argument("--style-dir", required=True)
     parser.add_argument("--lr", default=1e-4, type=float)
     parser.add_argument("--lr-decay", default=5e-5, type=float)
     parser.add_argument("--max-steps", default=160_000, type=int)
@@ -73,15 +75,17 @@ if __name__ == "__main__":
         )
         return img
 
-    def process_style(img):
-        img = tf.image.random_brightness(img, max_delta=0.8)
-        img = tf.image.random_saturation(img, lower=0.5, upper=1.5)
-        img = tf.image.random_hue(img, max_delta=0.1)
-        img = tf.image.random_flip_left_right(img)
-        img = tf.image.resize(img, size=(512, 512))
-        img = tf.image.random_crop(
-            img, size=(args.image_size, args.image_size, 3)
+    def process_style(file_path):
+        img = tf.io.read_file(file_path)
+        img = tf.image.decode_jpeg(
+            img,
+            channels=3,
+            try_recover_truncated=True,
+            acceptable_fraction=0.9,
         )
+        img = tf.image.resize(img, size=(512, 512), preserve_aspect_ratio=True)
+        img = tf.image.random_crop(img, size=(256, 256, 3))
+        img = tf.image.random_flip_left_right(img)
         return img
 
     # Warning: Downloads the full coco/2014 dataset
@@ -94,8 +98,9 @@ if __name__ == "__main__":
     )
 
     ds_pbn = (
-        load_pbn(split="train")
+        tf.data.Dataset.list_files(os.path.join(args.style_dir, "*.jpg"))
         .map(process_style, num_parallel_calls=AUTOTUNE)
+        .apply(tf.data.experimental.ignore_errors())
         .repeat()
         .batch(args.batch_size)
         .prefetch(AUTOTUNE)
