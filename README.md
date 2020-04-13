@@ -23,7 +23,7 @@ and also on the great unofficial [pytorch implementation](https://github.com/nao
   <img src="images/output/stockholm_stylized.jpg" width="140px">
   
   <img src="images/content/sailboat_cropped.jpg" width="140px">
-  <img src="images/style/sketch_cropped.jpg" width="140px">
+  <img src="images/style/sketch_cropped.png" width="140px">
   <img src="images/output/sailboat_stylized.jpg" width="140px">
 </div>
 <div align="center">
