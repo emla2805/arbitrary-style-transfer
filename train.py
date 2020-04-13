@@ -84,7 +84,9 @@ if __name__ == "__main__":
             acceptable_fraction=0.9,
         )
         img = tf.image.resize(img, size=(512, 512), preserve_aspect_ratio=True)
-        img = tf.image.random_crop(img, size=(256, 256, 3))
+        img = tf.image.random_crop(
+            img, size=(args.image_size, args.image_size, 3)
+        )
         img = tf.image.random_flip_left_right(img)
         return img
 
