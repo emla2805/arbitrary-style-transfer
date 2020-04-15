@@ -41,9 +41,9 @@ if __name__ == "__main__":
         "block4_conv1",  # relu4-1
     ]
     vgg = VGG(content_layer, style_layers)
-    encoder = Encoder(content_layer)
-    decoder = decoder()
-    transformer = TransformerNet(encoder, decoder)
+    transformer = TransformerNet(content_layer)
+
+    vgg(test_style_images)
 
     def process_content(features):
         img = features["image"]
@@ -108,14 +108,12 @@ if __name__ == "__main__":
     train_style_loss = tf.keras.metrics.Mean(name="train_style_loss")
     train_content_loss = tf.keras.metrics.Mean(name="train_content_loss")
 
-    # @tf.function
+    @tf.function
     def train_step(content_img, style_img):
-        content_feat = transformer.encoder(content_img)
-        style_feat = transformer.encoder(style_img)
-        t = transformer.norm(content_feat, style_feat, alpha=1.0)
+        t = transformer.encode(content_img, style_img, alpha=1.0)
 
         with tf.GradientTape() as tape:
-            stylized_img = transformer.decoder(t)
+            stylized_img = transformer.decode(t)
 
             _, style_feat_style = vgg(style_img)
             content_feat_stylized, style_feat_stylized = vgg(stylized_img)
@@ -168,7 +166,7 @@ if __name__ == "__main__":
                 f"Style Loss: {train_style_loss.result()}, "
                 f"Content Loss: {train_content_loss.result()}"
             )
-            # print(f"Saved checkpoint: {manager.save()}")
+            print(f"Saved checkpoint: {manager.save()}")
 
             train_loss.reset_states()
             train_style_loss.reset_states()

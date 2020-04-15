@@ -25,22 +25,25 @@ class ReflectionPadding2D(tf.keras.layers.Layer):
 
 
 class TransformerNet(tf.keras.Model):
-    def __init__(self, encoder, decoder):
+    def __init__(self, content_layer):
         super(TransformerNet, self).__init__()
-        self.encoder = encoder
-        self.decoder = decoder
+        self.encoder = Encoder(content_layer)
+        self.decoder = decoder()
 
-    def norm(self, content_feat, style_feat, alpha):
+    def encode(self, content_image, style_image, alpha):
+        content_feat = self.encoder(content_image)
+        style_feat = self.encoder(style_image)
+
         t = adaptive_instance_normalization(content_feat, style_feat)
         t = alpha * t + (1 - alpha) * content_feat
         return t
 
-    def call(self, content_image, style_image, alpha=1.0):
-        content_feat = self.encoder(content_image)
-        style_feat = self.encoder(style_image)
+    def decode(self, t):
+        return self.decoder(t)
 
-        t = self.norm(content_feat, style_feat, alpha)
-        g_t = self.decoder(t)
+    def call(self, content_image, style_image, alpha=1.0):
+        t = self.encode(content_image, style_image, alpha)
+        g_t = self.decode(t)
         return g_t
 
 
