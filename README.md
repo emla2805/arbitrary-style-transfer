@@ -71,9 +71,9 @@ The `alpha` parameter makes it possible to control the level of
 stylization of the content image. Varying `alpha` between 0 and 1 (default):
 
 <div align="center">
-  <img src="images/content/chicago_cropped.jpg" width="256px">
-  <img src="images/output/chicago_varying_alpha.gif" width="256px">
-  <img src="images/style/ashville_cropped.jpg" width="256px">
+  <img src="images/content/chicago_cropped.jpg" width="256px" align="top">
+  <img src="images/output/chicago_varying_alpha.gif" width="256px" align="top">
+  <img src="images/style/ashville_cropped.jpg" width="256px" align="top">
 </div>
  
 
