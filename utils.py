@@ -37,9 +37,4 @@ def style_loss(feat, feat_stylized):
 
 
 def content_loss(feat, feat_stylized):
-    return tf.add_n(
-        [
-            tf.losses.mse(f, f_stylized)
-            for f, f_stylized in zip(feat, feat_stylized)
-        ]
-    )
+    return tf.losses.mse(feat, feat_stylized)

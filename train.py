@@ -4,7 +4,7 @@ from argparse import ArgumentParser
 import tensorflow as tf
 import tensorflow_datasets as tfds
 
-from networks import TransformerNet
+from networks import TransformerNet, VGG, Encoder, decoder
 from utils import load_img, style_loss, content_loss
 
 AUTOTUNE = tf.data.experimental.AUTOTUNE
@@ -33,18 +33,17 @@ if __name__ == "__main__":
         [load_img(f"images/style/{f}") for f in style_paths], axis=0
     )
 
-    content_layers = ["block4_conv1"]  # relu-4-1
+    content_layer = "block4_conv1"  # relu-4-1
     style_layers = [
         "block1_conv1",  # relu1-1
         "block2_conv1",  # relu2-1
         "block3_conv1",  # relu3-1
         "block4_conv1",  # relu4-1
     ]
-
-    transformer = TransformerNet(style_layers, content_layers)
-
-    # TODO: Why do we need this call?
-    _ = transformer(test_content_images, test_style_images)
+    vgg = VGG(content_layer, style_layers)
+    encoder = Encoder(content_layer)
+    decoder = decoder()
+    transformer = TransformerNet(encoder, decoder)
 
     def process_content(features):
         img = features["image"]
@@ -109,23 +108,23 @@ if __name__ == "__main__":
     train_style_loss = tf.keras.metrics.Mean(name="train_style_loss")
     train_content_loss = tf.keras.metrics.Mean(name="train_content_loss")
 
-    @tf.function
+    # @tf.function
     def train_step(content_img, style_img):
-        _, content_feat = transformer.encoder(content_img)
-        style_feat, _ = transformer.encoder(style_img)
+        content_feat = transformer.encoder(content_img)
+        style_feat = transformer.encoder(style_img)
+        t = transformer.norm(content_feat, style_feat, alpha=1.0)
 
         with tf.GradientTape() as tape:
-            t = transformer.norm(content_feat[0], style_feat[-1], alpha=1.0)
             stylized_img = transformer.decoder(t)
-            style_feat_stylized, content_feat_stylized = transformer.encoder(
-                stylized_img
-            )
+
+            _, style_feat_style = vgg(style_img)
+            content_feat_stylized, style_feat_stylized = vgg(stylized_img)
 
             tot_style_loss = args.style_weight * style_loss(
-                style_feat, style_feat_stylized
+                style_feat_style, style_feat_stylized
             )
             tot_content_loss = args.content_weight * content_loss(
-                content_feat, content_feat_stylized
+                t, content_feat_stylized
             )
             loss = tot_style_loss + tot_content_loss
 
@@ -169,7 +168,7 @@ if __name__ == "__main__":
                 f"Style Loss: {train_style_loss.result()}, "
                 f"Content Loss: {train_content_loss.result()}"
             )
-            print(f"Saved checkpoint: {manager.save()}")
+            # print(f"Saved checkpoint: {manager.save()}")
 
             train_loss.reset_states()
             train_style_loss.reset_states()

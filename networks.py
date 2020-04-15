@@ -25,10 +25,10 @@ class ReflectionPadding2D(tf.keras.layers.Layer):
 
 
 class TransformerNet(tf.keras.Model):
-    def __init__(self, style_layers, content_layers):
+    def __init__(self, encoder, decoder):
         super(TransformerNet, self).__init__()
-        self.encoder = Encoder(style_layers, content_layers)
-        self.decoder = decoder()
+        self.encoder = encoder
+        self.decoder = decoder
 
     def norm(self, content_feat, style_feat, alpha):
         t = adaptive_instance_normalization(content_feat, style_feat)
@@ -36,10 +36,10 @@ class TransformerNet(tf.keras.Model):
         return t
 
     def call(self, content_image, style_image, alpha=1.0):
-        _, content_feat = self.encoder(content_image)
-        style_feat, _ = self.encoder(style_image)
+        content_feat = self.encoder(content_image)
+        style_feat = self.encoder(style_image)
 
-        t = self.norm(content_feat[0], style_feat[-1], alpha)
+        t = self.norm(content_feat, style_feat, alpha)
         g_t = self.decoder(t)
         return g_t
 
@@ -52,10 +52,31 @@ def adaptive_instance_normalization(content_feat, style_feat, epsilon=1e-5):
         style_feat, axes=[1, 2], keepdims=True
     )
     style_std = tf.math.sqrt(style_variance)
-    normalized = (content_feat - content_mean) * tf.math.rsqrt(
-        content_variance + epsilon
+
+    norm_content_feat = tf.nn.batch_normalization(
+        content_feat,
+        mean=content_mean,
+        variance=content_variance,
+        offset=style_mean,
+        scale=style_std,  # Maybe std?
+        variance_epsilon=epsilon,
     )
-    return normalized * style_std + style_mean
+    return norm_content_feat
+
+
+class Encoder(tf.keras.models.Model):
+    def __init__(self, content_layer):
+        super(Encoder, self).__init__()
+        vgg = VGG19(include_top=False, weights="imagenet")
+
+        self.vgg = tf.keras.Model(
+            [vgg.input], [vgg.get_layer(content_layer).output]
+        )
+        self.vgg.trainable = False
+
+    def call(self, inputs):
+        preprocessed_input = vgg19.preprocess_input(inputs)
+        return self.vgg(preprocessed_input)
 
 
 def decoder():
@@ -86,22 +107,20 @@ def decoder():
     )
 
 
-class Encoder(tf.keras.models.Model):
-    def __init__(self, style_layers, content_layers):
-        super(Encoder, self).__init__()
+class VGG(tf.keras.models.Model):
+    def __init__(self, content_layer, style_layers):
+        super(VGG, self).__init__()
         vgg = VGG19(include_top=False, weights="imagenet")
 
+        content_outputs = [vgg.get_layer(content_layer).output]
         style_outputs = [vgg.get_layer(name).output for name in style_layers]
-        content_outputs = [
-            vgg.get_layer(name).output for name in content_layers
-        ]
 
         self.vgg = tf.keras.Model(
-            [vgg.input], [style_outputs, content_outputs]
+            [vgg.input], [content_outputs, style_outputs]
         )
         self.vgg.trainable = False
 
     def call(self, inputs):
         preprocessed_input = vgg19.preprocess_input(inputs)
-        style_outputs, content_outputs = self.vgg(preprocessed_input)
-        return style_outputs, content_outputs
+        content_outputs, style_outputs = self.vgg(preprocessed_input)
+        return content_outputs, style_outputs
