@@ -54,7 +54,7 @@ def adaptive_instance_normalization(content_feat, style_feat, epsilon=1e-5):
     style_mean, style_variance = tf.nn.moments(
         style_feat, axes=[1, 2], keepdims=True
     )
-    style_std = tf.math.sqrt(style_variance)
+    style_std = tf.math.sqrt(style_variance + epsilon)
 
     norm_content_feat = tf.nn.batch_normalization(
         content_feat,

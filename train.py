@@ -4,7 +4,7 @@ from argparse import ArgumentParser
 import tensorflow as tf
 import tensorflow_datasets as tfds
 
-from networks import TransformerNet, VGG, Encoder, decoder
+from networks import TransformerNet, VGG
 from utils import load_img, style_loss, content_loss
 
 AUTOTUNE = tf.data.experimental.AUTOTUNE
