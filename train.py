@@ -45,26 +45,25 @@ if __name__ == "__main__":
 
     vgg(test_style_images)
 
-    def process_content(features):
-        img = features["image"]
-        img = tf.cast(img, tf.float32)
-        img = tf.image.resize(img, size=(512, 512))
+    def resize_and_crop(img, min_size):
+        img = resize(img, min_size=min_size)
         img = tf.image.random_crop(
             img, size=(args.image_size, args.image_size, 3)
         )
+        img = tf.cast(img, tf.float32)
+        return img
+
+    def process_content(features):
+        img = features["image"]
+        img = resize_and_crop(img, min_size=286)
         return img
 
     def process_style(file_path):
         img = tf.io.read_file(file_path)
         img = tf.image.decode_jpeg(img, channels=3)
-        img = tf.image.resize(img, size=(512, 512), preserve_aspect_ratio=True)
-        img = tf.image.random_crop(
-            img, size=(args.image_size, args.image_size, 3)
-        )
-        img = tf.image.random_flip_left_right(img)
+        img = resize_and_crop(img, min_size=512)
         return img
 
-    # Warning: Downloads the full coco/2014 dataset
     ds_coco = (
         tfds.load("coco/2014", split="train")
         .map(process_content, num_parallel_calls=AUTOTUNE)

@@ -14,13 +14,28 @@ def load_img(file_path):
     return img
 
 
-def mean_std_loss(feat, feat_stylized):
-    feat_mean, feat_variance = tf.nn.moments(feat, axes=[1, 2], keepdims=True)
+def resize(img, min_size=512):
+    """ Resize image and keep aspect ratio """
+    width, height, _ = tf.unstack(tf.shape(img), num=3)
+    if height < width:
+        new_height = min_size
+        new_width = int(width * new_height / height)
+    else:
+        new_width = min_size
+        new_height = int(height * new_width / width)
+
+    img = tf.image.resize(img, size=(new_width, new_height))
+    return img
+
+
+def mean_std_loss(feat, feat_stylized, epsilon=1e-5):
+    feat_mean, feat_variance = tf.nn.moments(feat, axes=[1, 2])
     feat_stylized_mean, feat_stylized_variance = tf.nn.moments(
-        feat_stylized, axes=[1, 2], keepdims=True
+        feat_stylized, axes=[1, 2]
     )
-    feat_std = tf.math.sqrt(feat_variance)
-    feat_stylized_std = tf.math.sqrt(feat_stylized_variance)
+    feat_std = tf.math.sqrt(feat_variance + epsilon)
+    feat_stylized_std = tf.math.sqrt(feat_stylized_variance + epsilon)
+
     loss = tf.losses.mse(feat_stylized_mean, feat_mean) + tf.losses.mse(
         feat_stylized_std, feat_std
     )
