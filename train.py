@@ -4,8 +4,8 @@ from argparse import ArgumentParser
 import tensorflow as tf
 import tensorflow_datasets as tfds
 
-from networks import TransformerNet
-from utils import load_img, style_loss, content_loss
+from networks import TransferNet, VGG
+from utils import load_img, style_loss, content_loss, resize
 
 AUTOTUNE = tf.data.experimental.AUTOTUNE
 
@@ -33,39 +33,37 @@ if __name__ == "__main__":
         [load_img(f"images/style/{f}") for f in style_paths], axis=0
     )
 
-    content_layers = ["block4_conv1"]  # relu-4-1
+    content_layer = "block4_conv1"  # relu-4-1
     style_layers = [
         "block1_conv1",  # relu1-1
         "block2_conv1",  # relu2-1
         "block3_conv1",  # relu3-1
         "block4_conv1",  # relu4-1
     ]
+    vgg = VGG(content_layer, style_layers)
+    transformer = TransferNet(content_layer)
 
-    transformer = TransformerNet(style_layers, content_layers)
+    vgg(test_style_images)
 
-    # TODO: Why do we need this call?
-    _ = transformer(test_content_images, test_style_images)
-
-    def process_content(features):
-        img = features["image"]
-        img = tf.cast(img, tf.float32)
-        img = tf.image.resize(img, size=(512, 512))
+    def resize_and_crop(img, min_size):
+        img = resize(img, min_size=min_size)
         img = tf.image.random_crop(
             img, size=(args.image_size, args.image_size, 3)
         )
+        img = tf.cast(img, tf.float32)
+        return img
+
+    def process_content(features):
+        img = features["image"]
+        img = resize_and_crop(img, min_size=286)
         return img
 
     def process_style(file_path):
         img = tf.io.read_file(file_path)
         img = tf.image.decode_jpeg(img, channels=3)
-        img = tf.image.resize(img, size=(512, 512), preserve_aspect_ratio=True)
-        img = tf.image.random_crop(
-            img, size=(args.image_size, args.image_size, 3)
-        )
-        img = tf.image.random_flip_left_right(img)
+        img = resize_and_crop(img, min_size=512)
         return img
 
-    # Warning: Downloads the full coco/2014 dataset
     ds_coco = (
         tfds.load("coco/2014", split="train")
         .map(process_content, num_parallel_calls=AUTOTUNE)
@@ -111,21 +109,19 @@ if __name__ == "__main__":
 
     @tf.function
     def train_step(content_img, style_img):
-        _, content_feat = transformer.encoder(content_img)
-        style_feat, _ = transformer.encoder(style_img)
+        t = transformer.encode(content_img, style_img, alpha=1.0)
 
         with tf.GradientTape() as tape:
-            t = transformer.norm(content_feat[0], style_feat[-1], alpha=1.0)
-            stylized_img = transformer.decoder(t)
-            style_feat_stylized, content_feat_stylized = transformer.encoder(
-                stylized_img
-            )
+            stylized_img = transformer.decode(t)
+
+            _, style_feat_style = vgg(style_img)
+            content_feat_stylized, style_feat_stylized = vgg(stylized_img)
 
             tot_style_loss = args.style_weight * style_loss(
-                style_feat, style_feat_stylized
+                style_feat_style, style_feat_stylized
             )
             tot_content_loss = args.content_weight * content_loss(
-                content_feat, content_feat_stylized
+                t, content_feat_stylized
             )
             loss = tot_style_loss + tot_content_loss
 
