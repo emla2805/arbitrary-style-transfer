@@ -28,7 +28,7 @@ def mean_std_loss(feat, feat_stylized):
 
 
 def style_loss(feat, feat_stylized):
-    return tf.add_n(
+    return tf.reduce_sum(
         [
             mean_std_loss(f, f_stylized)
             for f, f_stylized in zip(feat, feat_stylized)
@@ -37,4 +37,4 @@ def style_loss(feat, feat_stylized):
 
 
 def content_loss(feat, feat_stylized):
-    return tf.losses.mse(feat, feat_stylized)
+    return tf.reduce_mean(tf.square(feat - feat_stylized), axis=[1, 2, 3])

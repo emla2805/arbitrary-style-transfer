@@ -4,8 +4,8 @@ from argparse import ArgumentParser
 import tensorflow as tf
 import tensorflow_datasets as tfds
 
-from networks import TransformerNet, VGG
-from utils import load_img, style_loss, content_loss
+from networks import TransferNet, VGG
+from utils import load_img, style_loss, content_loss, resize
 
 AUTOTUNE = tf.data.experimental.AUTOTUNE
 
@@ -41,7 +41,7 @@ if __name__ == "__main__":
         "block4_conv1",  # relu4-1
     ]
     vgg = VGG(content_layer, style_layers)
-    transformer = TransformerNet(content_layer)
+    transformer = TransferNet(content_layer)
 
     vgg(test_style_images)
 

@@ -3,7 +3,7 @@ import tensorflow as tf
 from PIL import Image
 from argparse import ArgumentParser
 
-from networks import TransformerNet
+from networks import TransferNet
 from utils import load_img
 
 if __name__ == "__main__":
@@ -18,15 +18,8 @@ if __name__ == "__main__":
     content_image = load_img(args.content_image)
     style_image = load_img(args.style_image)
 
-    content_layers = ["block4_conv1"]  # relu-4-1
-    style_layers = [
-        "block1_conv1",  # relu1-1
-        "block2_conv1",  # relu2-1
-        "block3_conv1",  # relu3-1
-        "block4_conv1",  # relu4-1
-    ]
-
-    transformer = TransformerNet(style_layers, content_layers)
+    content_layer = "block4_conv1"
+    transformer = TransferNet(content_layer)
     ckpt = tf.train.Checkpoint(transformer=transformer)
     ckpt.restore(tf.train.latest_checkpoint(args.log_dir)).expect_partial()
 

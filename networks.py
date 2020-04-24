@@ -24,9 +24,9 @@ class ReflectionPadding2D(tf.keras.layers.Layer):
         )
 
 
-class TransformerNet(tf.keras.Model):
+class TransferNet(tf.keras.Model):
     def __init__(self, content_layer):
-        super(TransformerNet, self).__init__()
+        super(TransferNet, self).__init__()
         self.encoder = Encoder(content_layer)
         self.decoder = decoder()
 
@@ -61,7 +61,7 @@ def adaptive_instance_normalization(content_feat, style_feat, epsilon=1e-5):
         mean=content_mean,
         variance=content_variance,
         offset=style_mean,
-        scale=style_std,  # Maybe std?
+        scale=style_std,
         variance_epsilon=epsilon,
     )
     return norm_content_feat
@@ -115,11 +115,11 @@ class VGG(tf.keras.models.Model):
         super(VGG, self).__init__()
         vgg = VGG19(include_top=False, weights="imagenet")
 
-        content_outputs = [vgg.get_layer(content_layer).output]
+        content_output = vgg.get_layer(content_layer).output
         style_outputs = [vgg.get_layer(name).output for name in style_layers]
 
         self.vgg = tf.keras.Model(
-            [vgg.input], [content_outputs, style_outputs]
+            [vgg.input], [content_output, style_outputs]
         )
         self.vgg.trainable = False
 
