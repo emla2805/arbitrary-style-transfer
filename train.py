@@ -3,9 +3,10 @@ from argparse import ArgumentParser
 
 import tensorflow as tf
 import tensorflow_datasets as tfds
+from tensorflow.keras.callbacks import TensorBoard
 
-from networks import TransferNet, VGG
-from utils import load_img, style_loss, content_loss, resize
+from networks import TransferNet, VGG, Encoder, decoder
+from utils import load_img, resize, style_loss, content_loss
 
 AUTOTUNE = tf.data.experimental.AUTOTUNE
 
@@ -40,10 +41,16 @@ if __name__ == "__main__":
         "block3_conv1",  # relu3-1
         "block4_conv1",  # relu4-1
     ]
+    encoder = Encoder(content_layer)
+    decoder = decoder()
     vgg = VGG(content_layer, style_layers)
-    transformer = TransferNet(content_layer)
-
-    vgg(test_style_images)
+    transformer = TransferNet(
+        encoder,
+        decoder,
+        vgg,
+        content_weight=args.content_weight,
+        style_weight=args.style_weight,
+    )
 
     def resize_and_crop(img, min_size):
         img = resize(img, min_size=min_size)
@@ -85,88 +92,40 @@ if __name__ == "__main__":
     ds = tf.data.Dataset.zip((ds_coco, ds_pbn))
 
     optimizer = tf.keras.optimizers.Adam(learning_rate=args.lr)
-    ckpt = tf.train.Checkpoint(optimizer=optimizer, transformer=transformer)
-    manager = tf.train.CheckpointManager(ckpt, args.log_dir, max_to_keep=1)
-    ckpt.restore(manager.latest_checkpoint)
-    if manager.latest_checkpoint:
-        print(f"Restored from {manager.latest_checkpoint}")
-    else:
-        print("Initializing from scratch.")
+    transformer.compile(
+        optimizer=optimizer,
+        style_loss_fn=style_loss,
+        content_loss_fn=content_loss,
+    )
 
-    summary_writer = tf.summary.create_file_writer(args.log_dir)
+    class TransferMonitor(tf.keras.callbacks.Callback):
+        def __init__(self, log_dir, content_images, style_images):
+            super().__init__()
+            self.file_writer = tf.summary.create_file_writer(log_dir)
+            self.images = [content_images, style_images]
 
-    with summary_writer.as_default():
-        tf.summary.image(
-            "content", test_content_images / 255.0, step=0, max_outputs=6
-        )
-        tf.summary.image(
-            "style", test_style_images / 255.0, step=0, max_outputs=6
-        )
+        def on_train_batch_end(self, batch, logs=None):
+            stylized_images = self.model(self.images)
 
-    train_loss = tf.keras.metrics.Mean(name="train_loss")
-    train_style_loss = tf.keras.metrics.Mean(name="train_style_loss")
-    train_content_loss = tf.keras.metrics.Mean(name="train_content_loss")
-
-    @tf.function
-    def train_step(content_img, style_img):
-        t = transformer.encode(content_img, style_img, alpha=1.0)
-
-        with tf.GradientTape() as tape:
-            stylized_img = transformer.decode(t)
-
-            _, style_feat_style = vgg(style_img)
-            content_feat_stylized, style_feat_stylized = vgg(stylized_img)
-
-            tot_style_loss = args.style_weight * style_loss(
-                style_feat_style, style_feat_stylized
-            )
-            tot_content_loss = args.content_weight * content_loss(
-                t, content_feat_stylized
-            )
-            loss = tot_style_loss + tot_content_loss
-
-        gradients = tape.gradient(loss, transformer.trainable_variables)
-        optimizer.apply_gradients(
-            zip(gradients, transformer.trainable_variables)
-        )
-
-        train_loss(loss)
-        train_style_loss(tot_style_loss)
-        train_content_loss(tot_content_loss)
-
-    for step, (content_images, style_images) in enumerate(ds):
-        new_lr = args.lr / (1.0 + args.lr_decay * step)
-        optimizer.learning_rate.assign(new_lr)
-
-        train_step(content_images, style_images)
-
-        if step % args.log_freq == 0:
-            with summary_writer.as_default():
-                tf.summary.scalar("loss/total", train_loss.result(), step=step)
-                tf.summary.scalar(
-                    "loss/style", train_style_loss.result(), step=step
-                )
-                tf.summary.scalar(
-                    "loss/content", train_content_loss.result(), step=step
-                )
-                stylized_images = transformer(
-                    test_content_images, test_style_images
-                )
+            with self.file_writer.as_default():
                 tf.summary.image(
                     "stylized",
                     stylized_images / 255.0,
-                    step=step,
                     max_outputs=6,
+                    step=batch,
                 )
 
-            print(
-                f"Step {step}, "
-                f"Loss: {train_loss.result()}, "
-                f"Style Loss: {train_style_loss.result()}, "
-                f"Content Loss: {train_content_loss.result()}"
-            )
-            print(f"Saved checkpoint: {manager.save()}")
-
-            train_loss.reset_states()
-            train_style_loss.reset_states()
-            train_content_loss.reset_states()
+    transformer.fit(
+        ds,
+        steps_per_epoch=args.max_steps,
+        callbacks=[
+            TensorBoard(
+                log_dir=args.log_dir,
+                update_freq=args.log_freq,
+                profile_batch=0,
+            ),
+            TransferMonitor(
+                args.log_dir, test_content_images, test_style_images
+            ),
+        ],
+    )
