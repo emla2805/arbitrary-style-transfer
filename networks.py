@@ -25,52 +25,54 @@ class ReflectionPadding2D(tf.keras.layers.Layer):
 
 
 class TransferNet(tf.keras.Model):
-    def __init__(self, encoder, decoder, vgg, content_weight, style_weight):
+    def __init__(self, encoder, decoder, content_weight, style_weight):
         super(TransferNet, self).__init__()
         self.encoder = encoder
         self.decoder = decoder
-        self.vgg = vgg
         self.content_weight = content_weight
         self.style_weight = style_weight
 
-    def encode(self, content_image, style_image, alpha):
-        content_feat = self.encoder(content_image)
-        style_feat = self.encoder(style_image)
+    def encode(self, content_img, style_img, alpha):
+        content_feat_content, _ = self.encoder(content_img)
+        content_feat_style, _ = self.encoder(style_img)
 
-        t = adaptive_instance_normalization(content_feat, style_feat)
-        t = alpha * t + (1 - alpha) * content_feat
+        t = adaptive_instance_normalization(content_feat_content, content_feat_style)
+        t = alpha * t + (1 - alpha) * content_feat_content
         return t
 
     def call(self, data, alpha=1.0):
-        content_image, style_image = data
-        t = self.encode(content_image, style_image, alpha=alpha)
+        content_img, style_img = data
+        t = self.encode(content_img, style_img, alpha=alpha)
         g_t = self.decoder(t)
         return g_t
 
     def compile(self, optimizer, content_loss_fn, style_loss_fn):
         super(TransferNet, self).compile()
         self.optimizer = optimizer
-        self.content_loss = content_loss_fn
-        self.style_loss = style_loss_fn
+        self.content_loss_fn = content_loss_fn
+        self.style_loss_fn = style_loss_fn
 
     def train_step(self, data):
         content_img, style_img = data
+        alpha = 1.0
 
-        t = self.encode(content_img, style_img, alpha=1.0)
+        content_feat_content, style_feat_content = self.encoder(content_img)
+        content_feat_style, style_feat_style = self.encoder(style_img)
+
+        t = adaptive_instance_normalization(content_feat_content, content_feat_style)
+        t = alpha * t + (1 - alpha) * content_feat_content
 
         with tf.GradientTape() as tape:
             stylized_img = self.decoder(t)
+            content_feat_stylized, style_feat_stylized = self.encoder(stylized_img)
 
-            _, style_feat_style = self.vgg(style_img)
-            content_feat_stylized, style_feat_stylized = self.vgg(stylized_img)
-
-            tot_style_loss = self.style_weight * self.style_loss(
+            style_loss = self.style_weight * self.style_loss_fn(
                 style_feat_style, style_feat_stylized
             )
-            tot_content_loss = self.content_weight * self.content_loss(
+            content_loss = self.content_weight * self.content_loss_fn(
                 t, content_feat_stylized
             )
-            loss = tot_style_loss + tot_content_loss
+            loss = style_loss + content_loss
 
         gradients = tape.gradient(loss, self.trainable_variables)
         self.optimizer.apply_gradients(
@@ -78,8 +80,8 @@ class TransferNet(tf.keras.Model):
         )
         return {
             "loss/total": loss,
-            "loss/style": tot_style_loss,
-            "loss/content": tot_content_loss,
+            "loss/style": style_loss,
+            "loss/content": content_loss,
         }
 
 
@@ -101,21 +103,6 @@ def adaptive_instance_normalization(content_feat, style_feat, epsilon=1e-5):
         variance_epsilon=epsilon,
     )
     return norm_content_feat
-
-
-class Encoder(tf.keras.models.Model):
-    def __init__(self, content_layer):
-        super(Encoder, self).__init__()
-        vgg = VGG19(include_top=False, weights="imagenet")
-
-        self.vgg = tf.keras.Model(
-            [vgg.input], [vgg.get_layer(content_layer).output]
-        )
-        self.vgg.trainable = False
-
-    def call(self, inputs):
-        preprocessed_input = vgg19.preprocess_input(inputs)
-        return self.vgg(preprocessed_input)
 
 
 def decoder():

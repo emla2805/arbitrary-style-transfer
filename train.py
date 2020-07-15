@@ -5,7 +5,7 @@ import tensorflow as tf
 import tensorflow_datasets as tfds
 from tensorflow.keras.callbacks import TensorBoard
 
-from networks import TransferNet, VGG, Encoder, decoder
+from networks import TransferNet, VGG, decoder
 from utils import load_img, resize, style_loss, content_loss
 
 AUTOTUNE = tf.data.experimental.AUTOTUNE
@@ -41,13 +41,11 @@ if __name__ == "__main__":
         "block3_conv1",  # relu3-1
         "block4_conv1",  # relu4-1
     ]
-    encoder = Encoder(content_layer)
     decoder = decoder()
     vgg = VGG(content_layer, style_layers)
     transformer = TransferNet(
-        encoder,
-        decoder,
         vgg,
+        decoder,
         content_weight=args.content_weight,
         style_weight=args.style_weight,
     )
@@ -75,8 +73,6 @@ if __name__ == "__main__":
         tfds.load("coco/2014", split="train")
         .map(process_content, num_parallel_calls=AUTOTUNE)
         .repeat()
-        .batch(args.batch_size)
-        .prefetch(AUTOTUNE)
     )
 
     ds_pbn = (
@@ -85,11 +81,13 @@ if __name__ == "__main__":
         # Ignore too large or corrupt image files
         .apply(tf.data.experimental.ignore_errors())
         .repeat()
+    )
+
+    ds = (
+        tf.data.Dataset.zip((ds_coco, ds_pbn))
         .batch(args.batch_size)
         .prefetch(AUTOTUNE)
     )
-
-    ds = tf.data.Dataset.zip((ds_coco, ds_pbn))
 
     optimizer = tf.keras.optimizers.Adam(learning_rate=args.lr)
     transformer.compile(
@@ -102,30 +100,50 @@ if __name__ == "__main__":
         def __init__(self, log_dir, content_images, style_images):
             super().__init__()
             self.file_writer = tf.summary.create_file_writer(log_dir)
-            self.images = [content_images, style_images]
+            self.content_images = content_images
+            self.style_images = style_images
 
-        def on_train_batch_end(self, batch, logs=None):
-            stylized_images = self.model(self.images)
+        def on_train_begin(self, logs=None):
+            with self.file_writer.as_default():
+                tf.summary.image(
+                    "content", self.content_images / 255.0, step=0
+                )
+                tf.summary.image("style", self.style_images / 255.0, step=0)
+
+        def on_epoch_end(self, epoch, logs=None):
+            stylized_images = self.model(
+                [self.content_images, self.style_images]
+            )
 
             with self.file_writer.as_default():
                 tf.summary.image(
-                    "stylized",
-                    stylized_images / 255.0,
-                    max_outputs=6,
-                    step=batch,
+                    "stylized", stylized_images / 255.0, step=epoch
                 )
+
+    class CustomLearningRateScheduler(tf.keras.callbacks.Callback):
+        def __init__(self, schedule):
+            super(CustomLearningRateScheduler, self).__init__()
+            self.schedule = schedule
+            self.batch = 0
+
+        def on_train_batch_begin(self, batch, logs=None):
+            scheduled_lr = self.schedule(self.batch)
+            tf.keras.backend.set_value(self.model.optimizer.lr, scheduled_lr)
+            self.batch += 1
 
     transformer.fit(
         ds,
-        steps_per_epoch=args.max_steps,
+        epochs=args.max_steps // args.log_freq,
+        steps_per_epoch=args.log_freq,
         callbacks=[
-            TensorBoard(
-                log_dir=args.log_dir,
-                update_freq=args.log_freq,
-                profile_batch=0,
+            TensorBoard(log_dir=args.log_dir, profile_batch=0),
+            CustomLearningRateScheduler(
+                schedule=lambda batch: args.lr / (1.0 + args.lr_decay * batch)
             ),
             TransferMonitor(
-                args.log_dir, test_content_images, test_style_images
+                log_dir=args.log_dir,
+                content_images=test_content_images,
+                style_images=test_style_images,
             ),
         ],
     )
