@@ -3,7 +3,7 @@ from argparse import ArgumentParser
 
 import tensorflow as tf
 import tensorflow_datasets as tfds
-from tensorflow.keras.callbacks import TensorBoard
+from tensorflow.keras.callbacks import TensorBoard, ModelCheckpoint
 
 from networks import TransferNet, VGG, decoder
 from utils import load_img, resize, style_loss, content_loss
@@ -41,14 +41,6 @@ if __name__ == "__main__":
         "block3_conv1",  # relu3-1
         "block4_conv1",  # relu4-1
     ]
-    decoder = decoder()
-    vgg = VGG(content_layer, style_layers)
-    transformer = TransferNet(
-        vgg,
-        decoder,
-        content_weight=args.content_weight,
-        style_weight=args.style_weight,
-    )
 
     def resize_and_crop(img, min_size):
         img = resize(img, min_size=min_size)
@@ -73,23 +65,37 @@ if __name__ == "__main__":
         tfds.load("coco/2014", split="train")
         .map(process_content, num_parallel_calls=AUTOTUNE)
         .repeat()
-    )
-
-    ds_pbn = (
-        tf.data.Dataset.list_files(os.path.join(args.style_dir, "*.jpg"))
-        .map(process_style, num_parallel_calls=AUTOTUNE)
-        # Ignore too large or corrupt image files
-        .apply(tf.data.experimental.ignore_errors())
-        .repeat()
-    )
-
-    ds = (
-        tf.data.Dataset.zip((ds_coco, ds_pbn))
         .batch(args.batch_size)
         .prefetch(AUTOTUNE)
     )
 
-    optimizer = tf.keras.optimizers.Adam(learning_rate=args.lr)
+    ds_pbn = (
+        tf.data.Dataset.list_files(
+            os.path.join(args.style_dir, "*.jpg"), seed=1337
+        )
+        .map(process_style, num_parallel_calls=AUTOTUNE)
+        # Ignore too large or corrupt image files
+        .apply(tf.data.experimental.ignore_errors())
+        .repeat()
+        .batch(args.batch_size)
+        .prefetch(AUTOTUNE)
+    )
+
+    ds = tf.data.Dataset.zip((ds_coco, ds_pbn))
+
+    mirrored_strategy = tf.distribute.MirroredStrategy()
+
+    with mirrored_strategy.scope():
+        optimizer = tf.keras.optimizers.Adam(learning_rate=args.lr)
+        decoder = decoder()
+        vgg = VGG(content_layer, style_layers)
+        transformer = TransferNet(
+            vgg,
+            decoder,
+            content_weight=args.content_weight,
+            style_weight=args.style_weight,
+        )
+
     transformer.compile(
         optimizer=optimizer,
         style_loss_fn=style_loss,
@@ -140,6 +146,7 @@ if __name__ == "__main__":
             CustomLearningRateScheduler(
                 schedule=lambda batch: args.lr / (1.0 + args.lr_decay * batch)
             ),
+            ModelCheckpoint(filepath=os.path.join(args.log_dir, "ckpt")),
             TransferMonitor(
                 log_dir=args.log_dir,
                 content_images=test_content_images,
